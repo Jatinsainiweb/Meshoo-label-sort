@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meesho PDF Sorter — Sort shipping labels by SKU</title>
+  <meta name="description" content="Local, browser-only tool that sorts a mixed Meesho shipping-label PDF by SKU and product name." />
+  <meta name="pdfjs-worker-src" content="vendor/pdf.worker.min.js" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="logo">M</div>
+        <div>
+          <h1>Meesho PDF Sorter</h1>
+          <p>Sort shipping labels by SKU and product name</p>
+        </div>
+      </div>
+      <span class="pill pill-green">● Runs in your browser — files are never uploaded</span>
+    </div>
+  </header>
+
+  <main class="container main">
+    <!-- 1. UPLOAD -->
+    <section class="card" id="upload-card">
+      <div class="card-head">
+        <div>
+          <h2><span class="step">1</span>Upload the Meesho PDF</h2>
+          <p class="muted">Everything is processed inside your browser. The file never leaves this computer.</p>
+        </div>
+        <div class="row gap-sm" id="upload-actions" hidden>
+          <button class="btn btn-sm" id="btn-upload-another" type="button">Upload another PDF</button>
+          <button class="btn btn-sm btn-danger" id="btn-remove" type="button">Remove PDF</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
+
+        <div class="dropzone" id="dropzone" role="button" tabindex="0">
+          <div class="dz-icon">📄</div>
+          <p class="dz-title">Drag &amp; drop your shipping-label PDF here</p>
+          <p class="muted">or click to choose a file — PDF only</p>
+          <button class="btn btn-primary" type="button" id="btn-select">Select PDF file</button>
+        </div>
+
+        <div class="filebar" id="file-bar" hidden>
+          <div class="row gap">
+            <span class="file-icon">📄</span>
+            <div class="min0">
+              <p class="file-name" id="file-name"></p>
+              <p class="muted small" id="file-meta"></p>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-danger" id="btn-cancel-parse" type="button" hidden>Cancel processing</button>
+        </div>
+
+        <div id="parse-progress" hidden>
+          <div class="progress-label">
+            <span>Reading and analysing pages…</span>
+            <span id="parse-count" class="tnum"></span>
+          </div>
+          <div class="progress"><div class="progress-bar" id="parse-bar"></div></div>
+        </div>
+
+        <form class="alert alert-warning" id="password-form" hidden>
+          <div class="alert-body">
+            <p class="alert-title">This PDF is password protected</p>
+            <p>Enter the password to unlock it. It stays in this browser tab.</p>
+            <div class="row gap-sm mt">
+              <input type="password" id="password-input" placeholder="PDF password" autocomplete="off" />
+              <button class="btn btn-primary btn-sm" type="submit">Unlock</button>
+            </div>
+          </div>
+        </form>
+
+        <div class="alert alert-error" id="upload-error" hidden>
+          <span class="alert-icon">✕</span>
+          <div class="alert-body">
+            <p class="alert-title">The PDF could not be processed</p>
+            <p id="upload-error-text"></p>
+          </div>
+        </div>
+        <div class="alert alert-warning" id="upload-notice" hidden>
+          <span class="alert-icon">!</span>
+          <div class="alert-body"><p id="upload-notice-text"></p></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="alert alert-info" id="howto">
+      <span class="alert-icon">i</span>
+      <div class="alert-body">
+        <p class="alert-title">How this tool works</p>
+        <ol>
+          <li>Upload the combined label PDF you downloaded from Meesho.</li>
+          <li>Every page is read locally and its SKU / product name is detected.</li>
+          <li>Tick the products you want to print.</li>
+          <li>Generate a new PDF containing the <em>original</em> pages — barcodes, QR codes and invoices are copied unchanged.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div id="results" hidden>
+      <!-- 2. SUMMARY -->
+      <div class="stats" id="stats"></div>
+
+      <!-- 3. TABLE -->
+      <section class="card" id="table-card">
+        <div class="card-head">
+          <div>
+            <h2><span class="step">2</span>Select products to include</h2>
+            <p class="muted">Grouped by exact SKU. Different SKUs are never merged automatically.</p>
+          </div>
+          <div class="row gap-sm">
+            <button class="btn btn-sm" id="btn-select-all" type="button">Select all</button>
+            <button class="btn btn-sm" id="btn-clear" type="button">Clear selection</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="search">
+            <span class="search-icon">🔍</span>
+            <input type="search" id="search" placeholder="Search by SKU or product name…" autocomplete="off" />
+          </div>
+          <div class="segmented" id="filter-seg">
+            <button type="button" data-filter="all" class="active">All</button>
+            <button type="button" data-filter="detected">Detected only</button>
+            <button type="button" data-filter="issues">Needs review</button>
+          </div>
+          <button class="btn btn-sm btn-primary" id="btn-select-only" type="button" hidden>Select only these</button>
+          <span class="muted small" id="showing"></span>
+        </div>
+        <div class="table-wrap" id="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th class="col-check"><input type="checkbox" id="check-all" aria-label="Select all visible products" /></th>
+                <th class="col-sku"><button type="button" class="sort" data-sort="sku">SKU <i></i></button></th>
+                <th><button type="button" class="sort" data-sort="name">Product / item name <i></i></button></th>
+                <th class="col-pages right"><button type="button" class="sort" data-sort="pages">Pages <i></i></button></th>
+                <th class="col-status">Status</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- REVIEW -->
+      <section class="card" id="review-card">
+        <div class="card-head">
+          <div>
+            <h2><span class="step warn">!</span><span id="review-title">Review required</span></h2>
+            <p class="muted" id="review-sub">Pages with no SKU, a weak SKU signal, or several candidates. Nothing is discarded — assign them here and the page map updates immediately.</p>
+          </div>
+        </div>
+        <div id="review-empty" class="card-body" hidden>
+          <div class="alert alert-success">
+            <span class="alert-icon">✓</span>
+            <div class="alert-body"><p class="alert-title">Every page was classified with a SKU</p><p>No pages need manual review. You can still inspect any page from the product table.</p></div>
+          </div>
+        </div>
+        <div id="review-main">
+          <div class="toolbar">
+            <label class="field">
+              <span>Assign ticked pages to</span>
+              <select id="bulk-target"></select>
+            </label>
+            <input type="text" id="bulk-custom" placeholder="Type the SKU exactly" hidden />
+            <button class="btn btn-sm btn-primary" id="btn-bulk-apply" type="button" disabled>Apply</button>
+            <button class="btn btn-sm" id="btn-tick-shown" type="button">Tick all shown</button>
+            <button class="btn btn-sm" id="btn-untick" type="button">Untick all</button>
+          </div>
+          <div class="table-wrap short">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="col-check"></th>
+                  <th style="width:70px">Page</th>
+                  <th style="width:170px">Detected SKU</th>
+                  <th>Detected name / reason</th>
+                  <th style="width:280px">Assign to</th>
+                </tr>
+              </thead>
+              <tbody id="review-body"></tbody>
+            </table>
+          </div>
+          <div class="center pad" id="review-more-wrap" hidden>
+            <button class="btn btn-sm" id="btn-review-more" type="button"></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. GENERATE -->
+      <section class="card" id="generate-card">
+        <div class="card-head">
+          <div>
+            <h2><span class="step">3</span>Generate the filtered PDF</h2>
+            <p class="muted">Original pages are copied from the source file — labels, barcodes and QR codes are untouched.</p>
+          </div>
+          <button class="btn btn-sm" id="btn-csv" type="button">Export page map (CSV)</button>
+        </div>
+        <div class="card-body stack">
+          <div class="gen-grid">
+            <div class="panel">
+              <p class="eyebrow">Selected products</p>
+              <p class="muted" id="sel-empty">Nothing selected yet. Tick at least one SKU in the table above.</p>
+              <ul class="sel-list" id="sel-list"></ul>
+              <p class="sel-total" id="sel-total"></p>
+            </div>
+            <div class="stack">
+              <div>
+                <p class="eyebrow">Output mode</p>
+                <label class="option active" id="opt-combined">
+                  <input type="radio" name="mode" value="combined" checked />
+                  <span><b>A — One combined PDF</b><small>All selected pages in a single file.</small></span>
+                </label>
+                <label class="option" id="opt-separate">
+                  <input type="radio" name="mode" value="separate" />
+                  <span><b>B — Separate PDF per SKU (ZIP)</b><small>One PDF per SKU, packed into a ZIP.</small></span>
+                </label>
+              </div>
+              <label class="option" id="opt-group">
+                <input type="checkbox" id="group-by-sku" />
+                <span><b>Group output by SKU</b><small>Off = original page order. On = pages sorted into SKU blocks; original order kept inside each block.</small></span>
+              </label>
+              <button class="btn btn-primary btn-block" id="btn-generate" type="button" disabled>Generate PDF</button>
+              <button class="btn btn-danger btn-block" id="btn-cancel-gen" type="button" hidden>Cancel generation</button>
+            </div>
+          </div>
+
+          <div id="gen-alerts" class="stack"></div>
+
+          <div id="gen-progress" hidden>
+            <div class="progress-label"><span id="gen-stage"></span><span id="gen-count" class="tnum"></span></div>
+            <div class="progress"><div class="progress-bar" id="gen-bar"></div></div>
+          </div>
+
+          <div class="result" id="gen-result" hidden>
+            <div class="min0">
+              <p class="result-title" id="result-title"></p>
+              <p class="mono small" id="result-name"></p>
+            </div>
+            <button class="btn btn-primary" id="btn-download" type="button">⬇ Download</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="container footer">
+    Pages are grouped by exact SKU; two different SKUs are never merged. Text extraction uses PDF.js; output is assembled with pdf-lib;
+    ZIP packaging uses JSZip. All three libraries are bundled with this tool — no network access is needed.
+  </footer>
+
+  <!-- PAGE INSPECTOR -->
+  <div class="modal" id="inspector" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="insp-title">
+      <div class="card-head">
+        <div>
+          <h3 id="insp-title">Original page</h3>
+          <p class="muted small">Preview and raw extracted text — useful for checking a detection result.</p>
+        </div>
+        <button class="btn btn-sm" id="insp-close" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="insp-left"><div class="canvas-box"><canvas id="insp-canvas"></canvas><p class="muted center" id="insp-render-error" hidden></p></div></div>
+        <div class="insp-right">
+          <dl class="kv" id="insp-kv"></dl>
+          <ul class="issues" id="insp-issues"></ul>
+          <div class="row gap-sm mt">
+            <input type="text" id="insp-assign-input" placeholder="Assign this page to SKU…" />
+            <button class="btn btn-sm btn-primary" id="insp-assign" type="button">Assign</button>
+            <button class="btn btn-sm" id="insp-reset" type="button" hidden>Reset override</button>
+          </div>
+          <p class="eyebrow mt">Extracted text</p>
+          <pre class="rawtext" id="insp-text"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Libraries (classic scripts so the page works when opened from disk) -->
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/pdf-lib.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <!-- Application modules -->
+  <script src="js/utils.js"></script>
+  <script src="js/pdf-reader.js"></script>
+  <script src="js/detect.js"></script>
+  <script src="js/group.js"></script>
+  <script src="js/generate.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

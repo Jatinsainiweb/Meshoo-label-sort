@@ -1,0 +1,4 @@
+Bundled third-party libraries (unmodified, minified builds):
+- PDF.js 3.11.174  (Apache-2.0, Mozilla Foundation)   pdf.min.js, pdf.worker.min.js
+- pdf-lib 1.17.1   (MIT, Andrew Dillon)               pdf-lib.min.js
+- JSZip 3.10.1     (MIT or GPLv3, Stuart Knightley)   jszip.min.js
